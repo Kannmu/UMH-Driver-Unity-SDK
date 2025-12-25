@@ -72,5 +72,9 @@ namespace UMH
         {
             UMH_Manager.Instance?.SetPointAsync(point);
         }
+        public static void SetPhases(float[] phases)
+        {
+            UMH_Manager.Instance?.SetPhasesAsync(phases);
+        }
     }
 }

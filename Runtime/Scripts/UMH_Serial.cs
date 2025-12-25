@@ -28,19 +28,20 @@ namespace UMH
 
         public enum CommandType : byte
         {
-            SetPoint = 0x01,
-            EnableDisable = 0x02,
+            EnableDisable = 0x01,
             GetStatus = 0x03,
-            Ping = 0x04
+            Ping = 0x02,
+            SetPoint = 0x04,
+            SetPhases = 0x05,
         }
 
         public enum ResponseType : byte
         {
             ACK = 0x80,
             NACK = 0x81,
-            PACK = 0x82,
+            Ping_ACK = 0x82,
             ReturnStatus = 0x83,
-            Ping_ACK = 0x84,
+            PACK = 0x84,
             Error = 0xFF
         }
 

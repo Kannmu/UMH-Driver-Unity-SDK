@@ -3,8 +3,9 @@ using UnityEngine;
 using UMH;
 using TMPro;
 using Codice.Client.Commands;
+using UnityEngine.EventSystems;
 
-public class UMHController : MonoBehaviour
+public class UMH_Controller : MonoBehaviour
 {
     [Header("Controller Function Settings")]
 
@@ -19,7 +20,7 @@ public class UMHController : MonoBehaviour
             UpdateUIActivity();
         }
     }
-    
+
     [SerializeField, Tooltip("Enable or disable the demonstration of focus point.")]
     private bool enableFocusPoint = true;
     public bool EnableFocusPoint
@@ -148,7 +149,7 @@ public class UMHController : MonoBehaviour
 
     private void UpdateFocusPointActivity()
     {
-        transform.Find("Focus").gameObject.SetActive(EnableFocusPoint);
+        transform.Find("Device").Find("Focus").gameObject.SetActive(EnableFocusPoint);
 
         if (EnableFocusPoint)
         {
@@ -202,6 +203,13 @@ public class UMHController : MonoBehaviour
 
     private void OnAwake()
     {
+        // Automatically add EventSystem to the scene if it doesn't exist
+        if (FindObjectOfType<EventSystem>() == null)
+        {
+            GameObject eventSystem = new GameObject("EventSystem");
+            eventSystem.AddComponent<EventSystem>();
+            eventSystem.AddComponent<StandaloneInputModule>();
+        }
     }
 
     // Start is called before the first frame update
@@ -235,8 +243,7 @@ public class UMHController : MonoBehaviour
             _calibrationModeText = _info.Find("Calibration")?.GetComponent<TextMeshProUGUI>();
             _simulationModeText = _info.Find("Simulation")?.GetComponent<TextMeshProUGUI>();
         }
-
-        _focusTransform = transform.Find("Focus");
+        _focusTransform = transform.Find("Device").Find("Focus");
     }
 
     // Update is called once per frame
@@ -253,7 +260,7 @@ public class UMHController : MonoBehaviour
 
     void FixedUpdate()
     {
-
+        
     }
 
     private IEnumerator CircleTraject()
@@ -278,7 +285,29 @@ public class UMHController : MonoBehaviour
         }
     }
 
-    
+    public void TwinTrap()
+    {
+        Vector3 position = new Vector3(0.0f, 0.0f, 0.05f);
+        float ArraySize = 8;
+        float TransducerGap = 16.602f * 1e-3f;
+        float Wave_K = 2.0f*Mathf.PI*4e4f/340.0f;
+        float[] phases = new float[63];
+        for (int i = 0; i < 63; i++)
+        {
+            int row = (int)(i / ArraySize);
+            int col = i % (int)ArraySize;
+            float transducer_position_x = (float)(row - (ArraySize / 2.0) + 0.5) * TransducerGap;
+            float transducer_position_y = (float)(col - (ArraySize / 2.0) + 0.5) * TransducerGap;
+            Vector3 transducer_position = new Vector3(transducer_position_x, transducer_position_y, 0.0f);
+            float Distance = Vector3.Distance(transducer_position, position);
+            phases[i] = (2.0f * Mathf.PI) - (Distance * Wave_K) % (2.0f * Mathf.PI);
+            if (i < 32)
+            {
+                phases[i] += Mathf.PI;
+            }
+        }
+        UMH_API.SetPhases(phases);
+    }
 
     private IEnumerator UpdateUI()
     {
@@ -341,6 +370,10 @@ public class UMHController : MonoBehaviour
         {
             EnableFocusPoint = false;
             EnableTestingCircle = false;
+        }
+        else
+        {
+            EnableFocusPoint = true;
         }
     }
 

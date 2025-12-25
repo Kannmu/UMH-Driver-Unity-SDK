@@ -12,7 +12,6 @@ namespace UMH
     {
         public static UMH_Manager Instance { get; private set; }
         public bool IsConnected => _serial != null && _serial.IsConnected;
-        
         public event Action<byte[]> OnDataReceived;
         public event Action<UMH_Device_Status> OnStatusReceived;
         public event Action<Vector3> OnPointSent;
@@ -139,7 +138,7 @@ namespace UMH
             switch (type)
             {
                 case UMH_Serial.ResponseType.ACK:
-                    // Debug.Log($"<color={_common_info_color}>[UMH] Command Acknowledged (ACK) at {DateTime.Now:HH:mm:ss.fff}</color>");
+                    Debug.Log($"<color={_common_info_color}>[UMH] Command Acknowledged (ACK) at {DateTime.Now:HH:mm:ss.fff}</color>");
                     break;
                 case UMH_Serial.ResponseType.NACK:
                     Debug.LogWarning($"<color={_common_info_color}>[UMH] Command Not Acknowledged (NACK) at {DateTime.Now:HH:mm:ss.fff}</color>");
@@ -183,7 +182,7 @@ namespace UMH
         #region Protocol Commands
 
         /// <summary>
-        /// Command 0x01: Point Info
+        /// Command 0x04: Point Info
         /// </summary>
         public async void SetPointAsync(UMH_Point point)
         {
@@ -206,6 +205,26 @@ namespace UMH
             Array.Copy(BitConverter.GetBytes(point.Frequency), 0, data, offset, 4);
             OnPointSent?.Invoke(point.Position);
             await SendCommandAsync(UMH_Serial.CommandType.SetPoint, data);
+        }
+        /// <summary>
+        /// Command 0x05: SetPhases
+        /// </summary>
+        /// <param name="phases">Number of phases to set</param>
+        public async void SetPhasesAsync(float[] phases)
+        {
+            // Protocol limit: Max payload is 255 bytes. 4 bytes per float => max 63 phases.
+            if (phases.Length * 4 > 255)
+            {
+                Debug.LogError($"[UMH] SetPhasesAsync: Too many phases ({phases.Length}). Protocol supports max 63 floats per packet.");
+                return;
+            }
+
+            byte[] data = new byte[phases.Length * 4];
+            for (int i = 0; i < phases.Length; i++)
+            {
+                Array.Copy(BitConverter.GetBytes(phases[i]), 0, data, i * 4, 4);
+            }
+            await SendCommandAsync(UMH_Serial.CommandType.SetPhases, data);
         }
 
         /// <summary>
