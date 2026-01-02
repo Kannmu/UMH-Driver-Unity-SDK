@@ -4,38 +4,43 @@ using UnityEngine;
 
 namespace UMH
 {
-    public enum ArrayType
+    public class UMH_Device_Status
     {
-        Rect,
-        Hex
+        public float Voltage { get; set; }
+        public float Temperature { get; set; }
+        public UMH_Stimulation_Type StimulationType { get; set; }
+        public double StimulationRefreshDeltaTime { get; set; }
+        public float LoopFreq { get; set; }
+        public int CalibrationMode { get; set; }
+        public int PlaneMode { get; set; }
     }
 
-    public class UMH_Array
+    public enum UMH_Device_Version
     {
-        public ArrayType ArrayType;
-        public float TransducerSpace;
-        public Transducer[] Transducers;
-        public int NumTransducers => Transducers.Length;
-    }
-
-    public struct Transducer
-    {
-        public float Size;
-        public Vector3 Position;
-        public float Phase;
+        V4,
+        V5
     }
 
     public class UMH_Device : MonoBehaviour
     {
         public static UMH_Device Instance { get; private set; }
-        public UMH_Array array;
+
+        public static readonly UMH_Array UMH_Array_Ins = new(UMH_Device_Version.V5);
+
+        public UMH_Device_Version Version
+        {
+            get => UMH_Array_Ins.Version;
+            set
+            {
+                UMH_Array_Ins.Version = value;
+            }
+        }
 
         void Awake()
         {
             if (Instance == null)
             {
                 Instance = this;
-                DontDestroyOnLoad(gameObject);
             }
             else if (Instance != this)
             {
@@ -46,7 +51,7 @@ namespace UMH
         // Start is called before the first frame update
         void Start()
         {
-            
+
         }
 
         // Update is called once per frame

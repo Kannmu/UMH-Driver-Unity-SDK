@@ -14,8 +14,7 @@ namespace UMH
         public bool IsConnected => _serial != null && _serial.IsConnected;
         public event Action<byte[]> OnDataReceived;
         public event Action<UMH_Device_Status> OnStatusReceived;
-        public event Action<Vector3> OnPointSent;
-        public event Action<double> OnPACKReceived;
+        public event Action<Stimulation> OnStimulationSent;
         public event Action<byte> OnErrorReceived;
         public float RefreshRate = 30.0f;
         private UMH_Serial _serial;
@@ -57,11 +56,8 @@ namespace UMH
             OnStatusReceived -= UMH_API.HandleStatusUpdate;
             OnStatusReceived += UMH_API.HandleStatusUpdate;
 
-            OnPointSent -= UMH_API.HandlePointSent;
-            OnPointSent += UMH_API.HandlePointSent;
-
-            OnPACKReceived -= UMH_API.HandlePACKReceived;
-            OnPACKReceived += UMH_API.HandlePACKReceived;
+            OnStimulationSent -= UMH_API.HandleStimulationSent;
+            OnStimulationSent += UMH_API.HandleStimulationSent;
         }
 
         private void Start()
@@ -143,13 +139,8 @@ namespace UMH
                 case UMH_Serial.ResponseType.NACK:
                     Debug.LogWarning($"<color={_common_info_color}>[UMH] Command Not Acknowledged (NACK) at {DateTime.Now:HH:mm:ss.fff}</color>");
                     break;
-                case UMH_Serial.ResponseType.PACK:
-                    if (payload != null && payload.Length > 0)
-                    {
-                        double updateDeltaTime = BitConverter.ToDouble(payload[0..8]);
-                        OnPACKReceived?.Invoke(updateDeltaTime);
-                        // Debug.Log($"<color={_common_info_color}>[UMH] Point Sent: UpdateDeltaTime={updateDeltaTime}s at {DateTime.Now:HH:mm:ss.fff}</color>");
-                    }
+                case UMH_Serial.ResponseType.SACK:
+                    // Debug.Log($"<color={_common_info_color}>[UMH] Stimulation Sent at {DateTime.Now:HH:mm:ss.fff}</color>");
                     break;
                 case UMH_Serial.ResponseType.ReturnStatus:
                     if (payload != null && payload.Length > 0)
@@ -158,9 +149,11 @@ namespace UMH
                         int offset = 0;
                         newStatus.Voltage = BitConverter.ToSingle(payload[offset..(offset += 4)]);
                         newStatus.Temperature = BitConverter.ToSingle(payload[offset..(offset += 4)]);
+                        newStatus.StimulationRefreshDeltaTime = BitConverter.ToDouble(payload[offset..(offset += 8)]);
                         newStatus.LoopFreq = BitConverter.ToSingle(payload[offset..(offset += 4)]);
+                        newStatus.StimulationType = (UMH_Stimulation_Type)payload[offset ++];
                         newStatus.CalibrationMode = BitConverter.ToInt32(payload[offset..(offset += 4)]);
-                        newStatus.SimulationMode = BitConverter.ToInt32(payload[offset..(offset += 4)]);
+                        newStatus.PlaneMode = BitConverter.ToInt32(payload[offset..(offset += 4)]);
                         OnStatusReceived?.Invoke(newStatus);
                         // Debug.Log($"<color={_common_info_color}>[UMH] Status Received: Voltage={newStatus.Voltage:F2}V, Temperature={newStatus.Temperature:F1}°C, LoopFreq={newStatus.LoopFreq}Hz at {DateTime.Now:HH:mm:ss.fff}</color>");
                     }
@@ -184,27 +177,77 @@ namespace UMH
         /// <summary>
         /// Command 0x04: Point Info
         /// </summary>
-        public async void SetPointAsync(UMH_Point point)
+        public async void SetStimulationAsync(Stimulation stimulation)
         {
-            byte[] data = new byte[32];
-            int offset = 0;
-            Array.Copy(BitConverter.GetBytes(point.Position[0]), 0, data, offset, 4);
-            offset += 4;
-            Array.Copy(BitConverter.GetBytes(point.Position[1]), 0, data, offset, 4);
-            offset += 4;
-            Array.Copy(BitConverter.GetBytes(point.Position[2]), 0, data, offset, 4);
-            offset += 4;
-            Array.Copy(BitConverter.GetBytes(point.Strength), 0, data, offset, 4);
-            offset += 4;
-            Array.Copy(BitConverter.GetBytes(point.Vibration[0]), 0, data, offset, 4);
-            offset += 4;
-            Array.Copy(BitConverter.GetBytes(point.Vibration[1]), 0, data, offset, 4);
-            offset += 4;
-            Array.Copy(BitConverter.GetBytes(point.Vibration[2]), 0, data, offset, 4);
-            offset += 4;
-            Array.Copy(BitConverter.GetBytes(point.Frequency), 0, data, offset, 4);
-            OnPointSent?.Invoke(point.Position);
-            await SendCommandAsync(UMH_Serial.CommandType.SetPoint, data);
+            List<byte> payload = new()
+            {
+                // 1. stimulation_type
+                (byte)stimulation.Type
+            };
+
+            // 2. data
+            switch (stimulation.Type)
+            {
+                case UMH_Stimulation_Type.Point:
+                    if (stimulation is PointStimulation point)
+                    {
+                        // float[3] (position)
+                        payload.AddRange(BitConverter.GetBytes(point.Position.x));
+                        payload.AddRange(BitConverter.GetBytes(point.Position.z));
+                        payload.AddRange(BitConverter.GetBytes(point.Position.y));
+                    }
+                    
+                    break;
+                case UMH_Stimulation_Type.Vibration:
+                    if (stimulation is VibrationStimulation vibration)
+                    {
+                        // 2*float[3] (vibration start, vibration end)
+                        payload.AddRange(BitConverter.GetBytes(vibration.StartPosition.x));
+                        payload.AddRange(BitConverter.GetBytes(vibration.StartPosition.z));
+                        payload.AddRange(BitConverter.GetBytes(vibration.StartPosition.y));
+                        payload.AddRange(BitConverter.GetBytes(vibration.EndPosition.x));
+                        payload.AddRange(BitConverter.GetBytes(vibration.EndPosition.z));
+                        payload.AddRange(BitConverter.GetBytes(vibration.EndPosition.y));
+                    }
+                    break;
+                case UMH_Stimulation_Type.Linear:
+                    if (stimulation is LinearSTM linear)
+                    {
+                        // 2*float[3] (start position, end position)
+                        payload.AddRange(BitConverter.GetBytes(linear.StartPosition.x));
+                        payload.AddRange(BitConverter.GetBytes(linear.StartPosition.z));
+                        payload.AddRange(BitConverter.GetBytes(linear.StartPosition.y));
+
+                        payload.AddRange(BitConverter.GetBytes(linear.EndPosition.x));
+                        payload.AddRange(BitConverter.GetBytes(linear.EndPosition.z));
+                        payload.AddRange(BitConverter.GetBytes(linear.EndPosition.y));
+                    }
+                    break;
+                case UMH_Stimulation_Type.Circular:
+                    if (stimulation is CircularSTM circular)
+                    {
+                        // float[3] (center position, radius) -> Assuming center(3 floats) + radius(1 float)
+                        payload.AddRange(BitConverter.GetBytes(circular.CenterPosition.x));
+                        payload.AddRange(BitConverter.GetBytes(circular.CenterPosition.z));
+                        payload.AddRange(BitConverter.GetBytes(circular.CenterPosition.y));
+
+                        payload.AddRange(BitConverter.GetBytes(circular.NormalVector.x));
+                        payload.AddRange(BitConverter.GetBytes(circular.NormalVector.z));
+                        payload.AddRange(BitConverter.GetBytes(circular.NormalVector.y));
+
+                        payload.AddRange(BitConverter.GetBytes(circular.Radius));
+                    }
+                    break;
+            }
+
+            // 3. strength
+            payload.AddRange(BitConverter.GetBytes(stimulation.Strength));
+
+            // 4. frequency
+            payload.AddRange(BitConverter.GetBytes(stimulation.Frequency));
+            
+            OnStimulationSent?.Invoke(stimulation);
+            await SendCommandAsync(UMH_Serial.CommandType.SetStimulation, payload.ToArray());
         }
         /// <summary>
         /// Command 0x05: SetPhases
@@ -273,6 +316,7 @@ namespace UMH
                 _isScanning = false;
                 return;
             }
+            Debug.Log($"Scanning ports: {string.Join(", ", ports)}");
 
             var tcs = new TaskCompletionSource<UMH_Serial>();
             var tasks = new List<Task>();

@@ -31,7 +31,7 @@ namespace UMH
             EnableDisable = 0x01,
             GetStatus = 0x03,
             Ping = 0x02,
-            SetPoint = 0x04,
+            SetStimulation = 0x04,
             SetPhases = 0x05,
         }
 
@@ -41,7 +41,7 @@ namespace UMH
             NACK = 0x81,
             Ping_ACK = 0x82,
             ReturnStatus = 0x83,
-            PACK = 0x84,
+            SACK = 0x84,
             Error = 0xFF
         }
 

@@ -26,11 +26,15 @@
         - Random Number: byte[1]
     - 0x03: GetStatus (Get device status)
       - Payload: None
-    - 0x04: SetPoint (Set information of a specific point)
+    - 0x04: SetStimulation (Set stimulation information)
       - Payload:
-        - position: float[3]
+        - stimulation_type: byte (0x00: Point, 0x01: Vibration, 0x02: Linear, 0x03: Circular)
+        - data:
+          - Point: float[3] (position)
+          - Vibration: 2*float[3] (vibration start, vibration end)
+          - Linear: 2*float[3] (start position, end position)
+          - Circular: float[7] (center position, normal vector, radius)
         - strength: float
-        - vibration: float[3]
         - frequency: float
     - 0x05: SetPhases (Set phases of each transducer)
       - Payload:
@@ -39,16 +43,22 @@
     - 0x80: ACK (General success response)
     - 0x81: NACK (General failure response)
     - 0x82: Ping_ACK (Specific response to Ping command)
+      - For the Ping command (0x04): The PC may send a random number as the data payload, and the UMH must return that same random number unchanged in the Ping_ACK (0x83) response to increase recognition reliability.
       - Payload:
         - Random Number: byte[1]
     - 0x83: Return Status (Return specific status, e.g., temperature)
       - Payload:
         - Voltage: float
         - Temperature: float
-    - 0x84: PACK (Point Sent)
+        - StimulationType: byte (0x00: Point, 0x01: Vibration, 0x02: Linear, 0x03: Circular)
+        - StimulationRefreshDeltaTime: float
+        - LoopFreq: float
+        - CalibrationMode: byte (0x00: Off, 0x01: On)
+        - PlaneMode: byte (0x00: Off, 0x01: On)
+    - 0x84: SACK (Stimulation Sent)
       - Payload:
-        - UpdateDeltaTime: double
-      - For the Ping command (0x04): The PC may send a random number as the data payload, and the UMH must return that same random number unchanged in the Ping_ACK (0x83) response to increase recognition reliability.
+        - NULL
+      
 
     - 0xFF: Error Code (Return detailed error code)
 - Data Length: unsigned char (1 byte)
