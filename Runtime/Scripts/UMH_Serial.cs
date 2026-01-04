@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.IO.Ports;
 using System.Threading;
 using System.Threading.Tasks;
@@ -14,8 +13,8 @@ namespace UMH
         private SerialPort _serialPort;
         private bool _isRunning;
         private Thread _readThread;
-        private readonly List<byte> _buffer = new List<byte>();
-        private readonly object _bufferLock = new object();
+        private readonly UMH_RingBuffer _ringBuffer = new UMH_RingBuffer(16384); // 16KB buffer
+        private readonly byte[] _readBuffer = new byte[4096]; // Temp buffer for reading from SerialPort
 
         private const byte Header1 = 0xAA;
         private const byte Header2 = 0x55;
@@ -29,10 +28,11 @@ namespace UMH
         public enum CommandType : byte
         {
             EnableDisable = 0x01,
-            GetStatus = 0x03,
             Ping = 0x02,
-            SetStimulation = 0x04,
-            SetPhases = 0x05,
+            GetConfig = 0x03,
+            GetStatus = 0x04,
+            SetStimulation = 0x05,
+            SetPhases = 0x06,
         }
 
         public enum ResponseType : byte
@@ -40,12 +40,13 @@ namespace UMH
             ACK = 0x80,
             NACK = 0x81,
             Ping_ACK = 0x82,
-            ReturnStatus = 0x83,
-            SACK = 0x84,
+            ReturnConfig = 0x83,
+            ReturnStatus = 0x84,
+            SACK = 0x85,
             Error = 0xFF
         }
 
-        public bool Connect(string portName, int baudRate)
+        public bool Connect(string portName, int baudRate, bool printLog = true)
         {
             Disconnect();
 
@@ -67,8 +68,12 @@ namespace UMH
 
                 return true;
             }
-            catch
+            catch (Exception ex)
             {
+                if (printLog)
+                {
+                    Debug.LogError($"[UMH] Connection failed: {ex.Message}");
+                }
                 Disconnect();
                 return false;
             }
@@ -79,7 +84,11 @@ namespace UMH
             _isRunning = false;
             if (_readThread != null && _readThread.IsAlive)
             {
-                _readThread.Join(200);
+                // Wait briefly for thread to finish
+                if (!_readThread.Join(200))
+                {
+                    _readThread.Abort(); // Force kill if stuck (rarely needed but safe for cleanup)
+                }
             }
 
             if (_serialPort != null)
@@ -89,10 +98,7 @@ namespace UMH
                 _serialPort = null;
             }
 
-            lock (_bufferLock)
-            {
-                _buffer.Clear();
-            }
+            _ringBuffer.Clear();
         }
 
         public async Task<bool> SendFrameAsync(CommandType cmd, byte[] data = null)
@@ -127,84 +133,94 @@ namespace UMH
                 await _serialPort.BaseStream.FlushAsync();
                 return true;
             }
-            catch
+            catch (Exception ex)
             {
+                Debug.LogWarning($"[UMH] Send failed: {ex.Message}");
                 return false;
             }
         }
 
         private void ReadLoop()
         {
-            byte[] buffer = new byte[1024];
             while (_isRunning && _serialPort != null && _serialPort.IsOpen)
             {
                 try
                 {
-                    int bytesRead = _serialPort.Read(buffer, 0, buffer.Length);
+                    int bytesRead = _serialPort.Read(_readBuffer, 0, _readBuffer.Length);
                     if (bytesRead > 0)
                     {
-                        lock (_bufferLock)
-                        {
-                            for (int i = 0; i < bytesRead; i++)
-                            {
-                                _buffer.Add(buffer[i]);
-                            }
-                        }
+                        _ringBuffer.Write(_readBuffer, bytesRead);
                         ProcessBuffer();
                     }
                 }
                 catch (TimeoutException) { }
-                catch
+                catch (Exception ex)
                 {
-                    if (_isRunning) Disconnect(); 
+                    if (_isRunning)
+                    {
+                         Debug.LogWarning($"[UMH] Read loop exception: {ex.Message}");
+                         Disconnect(); 
+                    }
                 }
             }
         }
 
         private void ProcessBuffer()
         {
-            lock (_bufferLock)
+            // We need at least 7 bytes for a minimal frame (Head1+Head2+Cmd+Len+Chk+Tail1+Tail2)
+            while (_ringBuffer.Count >= 7)
             {
-                while (_buffer.Count >= 7)
+                // Peek headers
+                if (_ringBuffer.PeekByte(0) != Header1 || _ringBuffer.PeekByte(1) != Header2)
                 {
-                    if (_buffer[0] != Header1 || _buffer[1] != Header2)
-                    {
-                        _buffer.RemoveAt(0);
-                        continue;
-                    }
+                    _ringBuffer.Skip(1);
+                    continue;
+                }
 
-                    byte dataLen = _buffer[3];
-                    int totalLen = 7 + dataLen;
+                // Peek data length
+                byte dataLen = _ringBuffer.PeekByte(3);
+                int totalLen = 7 + dataLen;
 
-                    if (_buffer.Count < totalLen) break;
+                // Wait for full packet
+                if (_ringBuffer.Count < totalLen)
+                {
+                    break; 
+                }
 
-                    if (_buffer[totalLen - 2] != Tail1 || _buffer[totalLen - 1] != Tail2)
-                    {
-                        _buffer.RemoveAt(0);
-                        continue;
-                    }
+                // Check tails
+                if (_ringBuffer.PeekByte(totalLen - 2) != Tail1 || _ringBuffer.PeekByte(totalLen - 1) != Tail2)
+                {
+                    _ringBuffer.Skip(1); // Invalid frame structure
+                    continue;
+                }
 
-                    byte cmd = _buffer[2];
-                    byte checksum = _buffer[totalLen - 3];
-                    
-                    byte[] payload = null;
-                    if (dataLen > 0)
-                    {
-                        payload = new byte[dataLen];
-                        _buffer.CopyTo(4, payload, 0, dataLen);
-                    }
+                // Read full frame
+                byte[] frame = new byte[totalLen];
+                _ringBuffer.Peek(frame, totalLen);
 
-                    if (CalculateChecksum(cmd, dataLen, payload) == checksum)
-                    {
-                        byte[] frame = new byte[totalLen];
-                        _buffer.CopyTo(0, frame, 0, totalLen);
-                        OnFrameReceived?.Invoke(frame);
-                        _buffer.RemoveRange(0, totalLen);
-                    }
-                    else
-                    {
-                        _buffer.RemoveAt(0);
-                    }
+                // Verify Checksum
+                byte cmd = frame[2];
+                byte checksum = frame[totalLen - 3];
+                
+                // Extract payload for checksum calc
+                byte[] payload = null;
+                if (dataLen > 0)
+                {
+                    payload = new byte[dataLen];
+                    Array.Copy(frame, 4, payload, 0, dataLen);
+                }
+
+                if (CalculateChecksum(cmd, dataLen, payload) == checksum)
+                {
+                    // Valid frame
+                    _ringBuffer.Skip(totalLen); // Consume from buffer
+                    OnFrameReceived?.Invoke(frame);
+                }
+                else
+                {
+                    // Invalid checksum
+                    Debug.LogWarning("[UMH] Checksum mismatch");
+                    _ringBuffer.Skip(1); // Skip 1 byte and try to resync
                 }
             }
         }

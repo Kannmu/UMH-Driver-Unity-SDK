@@ -11,13 +11,13 @@ namespace UMH
         public IEnumerator UpdateFocus()
         {
             Vector3 FocusPos = Vector3.zero;
-            Stimulation stimulation = UMH_API.CurrentStimulation;
+            Stimulation stimulation = UMH_API.GetCurrentStimulation();
 
             while (true)
             {
                 float Progress = Time.time * stimulation.Frequency % 1f;
 
-                switch (UMH_API.CurrentStimulation.Type)
+                switch (stimulation.Type)
                 {
                     case UMH_Stimulation_Type.Point:
                         if (stimulation is PointStimulation pointStimulation)
@@ -62,9 +62,9 @@ namespace UMH
 
         public void DrawFocusPath(Vector3 position)
         {
-            foreach (var point in UMH_Device.UMH_Array_Ins.ArrayConnerPoints)
+            foreach (var point in UMH_API.GetArrayConnerPoints())
             {
-                Debug.DrawLine(this.transform.position + point, position + this.transform.position, Color.green, 1.0f / UMH_Controller.Instance.UIUpdateRate);
+                Debug.DrawLine(point, this.transform.position, Color.green, 1.0f / UMH_Controller.Instance.UIUpdateRate);
             }
         }
     }

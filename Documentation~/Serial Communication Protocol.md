@@ -24,9 +24,11 @@
     - 0x02: Ping (Used for connection test and automatic serial port recognition)
       - Payload:
         - Random Number: byte[1]
-    - 0x03: GetStatus (Get device status)
+    - 0x03: GetConfig (Get device configuration)
       - Payload: None
-    - 0x04: SetStimulation (Set stimulation information)
+    - 0x04: GetStatus (Get device status)
+      - Payload: None
+    - 0x05: SetStimulation (Set stimulation information)
       - Payload:
         - stimulation_type: byte (0x00: Point, 0x01: Vibration, 0x02: Linear, 0x03: Circular)
         - data:
@@ -36,7 +38,7 @@
           - Circular: float[7] (center position, normal vector, radius)
         - strength: float
         - frequency: float
-    - 0x05: SetPhases (Set phases of each transducer)
+    - 0x06: SetPhases (Set phases of each transducer)
       - Payload:
         - Phases: float[NumTransducer]
   - UMH -> PC (Response)
@@ -46,16 +48,26 @@
       - For the Ping command (0x04): The PC may send a random number as the data payload, and the UMH must return that same random number unchanged in the Ping_ACK (0x83) response to increase recognition reliability.
       - Payload:
         - Random Number: byte[1]
-    - 0x83: Return Status (Return specific status, e.g., temperature)
+    - 0x83: Return Config (Return device configuration)
       - Payload:
-        - Voltage: float
+        - Version: int (32-bit integer, 4 for V4, 5 for V5)
+        - ArrayType: byte (0x00: Rect, 0x01: Hex)
+        - ArraySize: int (Number of transducers along the edge of the array)
+        - NumTransducer: int (32-bit integer)
+        - TransducerSize: float (Size of each transducer)
+        - TransducerSpace: float (Space between each transducer)
+    - 0x84: Return Status (Return specific status, e.g., temperature)
+      - Payload:
+        - Voltage_VDDA: float
+        - Voltage_3V3: float
+        - Voltage_5V0: float
         - Temperature: float
         - StimulationType: byte (0x00: Point, 0x01: Vibration, 0x02: Linear, 0x03: Circular)
         - StimulationRefreshDeltaTime: float
         - LoopFreq: float
         - CalibrationMode: byte (0x00: Off, 0x01: On)
-        - PlaneMode: byte (0x00: Off, 0x01: On)
-    - 0x84: SACK (Stimulation Sent)
+        - PhaseSetMode: byte (0x00: Off, 0x01: On)
+    - 0x85: SACK (Stimulation Sent)
       - Payload:
         - NULL
       

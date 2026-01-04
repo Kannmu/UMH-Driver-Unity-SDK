@@ -6,9 +6,11 @@ namespace UMH
 {
     public static class UMH_API
     {
-        public static Stimulation CurrentStimulation;
+        // ================================================= 
+        // Connection
+        // ================================================= 
         public static bool IsConnected => UMH_Manager.Instance != null && UMH_Manager.Instance.IsConnected;
-        public static UMH_Device_Status DeviceStatus { get; private set; } = new UMH_Device_Status();
+        
         public static void ManualConnect(string portName, int baudRate)
         {
             UMH_Manager.Instance?.Connect(portName, baudRate);
@@ -19,6 +21,9 @@ namespace UMH
             UMH_Manager.Instance?.Reconnect();
         }
 
+        // ================================================= 
+        // Set Parameters
+        // ================================================= 
         public static void SetRefreshRate(float refreshRate)
         {
             if (UMH_Manager.Instance != null)
@@ -27,32 +32,72 @@ namespace UMH
             }
         }
 
+        // ================================================= 
+        // Device Configuration
+        // ================================================= 
+        public static void SetDeviceConfig(UMH_Device_Config config)
+        {
+            UMH_Device.DeviceConfig = config;
+        }
+        public static UMH_Device_Config GetDeviceConfig()
+        {
+            return UMH_Device.DeviceConfig;
+        }
+
+        // ================================================= 
+        // Device Status
+        // ================================================= 
+        public static void SetDeviceStatus(UMH_Device_Status status)
+        {
+            UMH_Device.DeviceStatus = status;
+        }
         public static UMH_Device_Status GetDeviceStatus()
         {
-            return DeviceStatus;
+            return UMH_Device.DeviceStatus;
         }
-
         public static void SendGetStatusCommand()
         {
-            UMH_Manager.Instance?.GetStatusAsync();
+            _ = UMH_Manager.Instance?.GetStatusAsync();
         }
-        public static void HandleStatusUpdate(UMH_Device_Status newStatus)
+        
+        // ================================================= 
+        // Get Device Information
+        // ================================================= 
+        public static Vector2[] GetArrayConnerPoints()
         {
-            DeviceStatus = newStatus;
+            return UMH_Array.GetArrayConnerPoints();
         }
-
-        public static void HandleStimulationSent(Stimulation newStimulation)
+        
+        // ================================================= 
+        // Stimulation & Phases Control
+        // ================================================= 
+        public static Stimulation GetCurrentStimulation()
         {
-            CurrentStimulation = newStimulation;
+            return UMH_Stimulation.CurrentStimulation;
         }
-
-        public static void SetPoints(Stimulation point)
+        public static void SetStimulation(Stimulation stimulation)
         {
-            UMH_Manager.Instance?.SetStimulationAsync(point);
+            _ = SetStimulationAsync(stimulation);
         }
+        
         public static void SetPhases(float[] phases)
         {
-            UMH_Manager.Instance?.SetPhasesAsync(phases);
+            _ = SetPhasesAsync(phases);
+        }
+
+        // ================================================= 
+        // Async Stimulation & Phases Control
+        // ================================================= 
+        public static async Task SetStimulationAsync(Stimulation stimulation)
+        {
+            if (UMH_Manager.Instance != null)
+                await UMH_Manager.Instance.SetStimulationAsync(stimulation);
+        }
+        
+        public static async Task SetPhasesAsync(float[] phases)
+        {
+            if (UMH_Manager.Instance != null)
+                await UMH_Manager.Instance.SetPhasesAsync(phases);
         }
     }
 }

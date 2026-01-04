@@ -1,40 +1,40 @@
 using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
 
 namespace UMH
 {
-    public class UMH_Device_Status
+    public class UMH_Device_Config
     {
-        public float Voltage { get; set; }
-        public float Temperature { get; set; }
-        public UMH_Stimulation_Type StimulationType { get; set; }
-        public double StimulationRefreshDeltaTime { get; set; }
-        public float LoopFreq { get; set; }
-        public int CalibrationMode { get; set; }
-        public int PlaneMode { get; set; }
+        public int Version { get; set; }  = 5; // Version of the configuration
+        public UMH_ArrayType ArrayType { get; set; } = UMH_ArrayType.Hex; // Array type (Square or Hex)
+        public int ArraySize { get; set; } = 5; // Number of transducers in the edge of the array
+        public int NumTransducers { get; set; } // Number of transducers in the array
+        public float TransducerSize { get; set; } = 10e-3f; // in meters
+        public float TransducerSpacing { get; set; } = 10e-3f; // in meters
     }
 
-    public enum UMH_Device_Version
+    public class UMH_Device_Status
     {
-        V4,
-        V5
+        public float Voltage_VDDA { get; set; }
+        public float Voltage_3V3 { get; set; }
+        public float Voltage_5V0 { get; set; }
+        public float Temperature { get; set; }
+        public UMH_Stimulation_Type StimulationType { get; set; }
+        public double DeltaTime { get; set; }
+        public float LoopFreq { get; set; }
+        public int CalibrationMode { get; set; }
+        public int PhaseSetMode { get; set; }
     }
 
     public class UMH_Device : MonoBehaviour
     {
+        public GameObject TransducerPrefab;
+
         public static UMH_Device Instance { get; private set; }
 
-        public static readonly UMH_Array UMH_Array_Ins = new(UMH_Device_Version.V5);
+        public static UMH_Device_Config DeviceConfig { get; set; } = new UMH_Device_Config();
 
-        public UMH_Device_Version Version
-        {
-            get => UMH_Array_Ins.Version;
-            set
-            {
-                UMH_Array_Ins.Version = value;
-            }
-        }
+        public static UMH_Device_Status DeviceStatus { get; set; } = new UMH_Device_Status();
 
         void Awake()
         {
@@ -47,17 +47,15 @@ namespace UMH
                 Destroy(gameObject);
                 return;
             }
+
+            UMH_Array.Instance.Init();
         }
-        // Start is called before the first frame update
-        void Start()
+
+        public static void HandleStatusUpdate(UMH_Device_Status newStatus)
         {
-
+            DeviceStatus = newStatus;
         }
 
-        // Update is called once per frame
-        void Update()
-        {
 
-        }
     }
 }

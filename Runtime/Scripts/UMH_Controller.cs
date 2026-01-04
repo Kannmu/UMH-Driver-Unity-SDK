@@ -3,6 +3,7 @@ using UnityEngine;
 using UMH;
 using TMPro;
 using UnityEngine.EventSystems;
+using System.Collections.Generic;
 
 namespace UMH
 {
@@ -27,7 +28,6 @@ namespace UMH
 
         [SerializeField, Tooltip("Refresh rate for getting device status.")]
         private float getDeviceStatusRate = 30f;
-
         public float GetDeviceStatusRate
         {
             get => getDeviceStatusRate;
@@ -63,6 +63,9 @@ namespace UMH
             }
         }
 
+
+        public GameObject TextPrefab;
+
         private bool _needsUpdate = false;
 
         private void OnValidate()
@@ -73,17 +76,25 @@ namespace UMH
             }
             else
             {
-                UpdateUIActivity();
+#if UNITY_EDITOR
+                // Use delayCall to avoid SendMessage errors during OnValidate (e.g. SetActive triggering hierarchy changes)
+                UnityEditor.EditorApplication.delayCall += () =>
+                {
+                    if (this != null)
+                    {
+                        UpdateUIActivity();
+                    }
+                };
+#endif
             }
         }
 
         private void UpdateUIActivity()
         {
-            Transform ui = transform.Find("UI");
+            Transform ui = transform.Find("Canvas");
             if (ui != null)
             {
-                ui?.gameObject.SetActive(EnableUI);
-                // pause the UpdateUI coroutine specifically
+                ui.gameObject.SetActive(EnableUI);
 
                 if (EnableUI)
                 {
@@ -104,20 +115,13 @@ namespace UMH
         }
 
         public static UMH_Controller Instance { get; private set; }
-        private Transform _info;
+        private Transform _config, _status;
         private const string _info_num_color = "#3a8b3aff";
-        private const string _info_x_axis_color = "#8b3a3aff";
-        private const string _info_y_axis_color = "#3a8b3aff";
-        private const string _info_z_axis_color = "#3a648bff";
-
-        // Cached UI Components to avoid GetComponent calls in Update loops
-        private TextMeshProUGUI _voltageText;
-        private TextMeshProUGUI _temperatureText;
-        private TextMeshProUGUI _stimulationTypeText;
-        private TextMeshProUGUI _deltaTimeText;
-        private TextMeshProUGUI _loopFreqText;
-        private TextMeshProUGUI _calibrationModeText;
-        private TextMeshProUGUI _planeModeText;
+        // private const string _info_x_axis_color = "#8b3a3aff";
+        // private const string _info_y_axis_color = "#3a8b3aff";
+        // private const string _info_z_axis_color = "#3a648bff";
+        private Dictionary<string, TextMeshProUGUI> _configTexts = new Dictionary<string, TextMeshProUGUI>();
+        private Dictionary<string, TextMeshProUGUI> _statusTexts = new Dictionary<string, TextMeshProUGUI>();
         private Coroutine _updateUICoroutine = null;
 
         private void OnEnable()
@@ -133,7 +137,6 @@ namespace UMH
 
         private void Awake()
         {
-            // Automatically add EventSystem to the scene if it doesn't exist
             if (FindObjectOfType<EventSystem>() == null)
             {
                 GameObject eventSystem = new GameObject("EventSystem");
@@ -151,39 +154,54 @@ namespace UMH
                 Destroy(gameObject);
                 return;
             }
-
         }
 
-        // Start is called before the first frame update
         void Start()
         {
             InitializeUIComponents();
 
             UMH_API.SetRefreshRate(getDeviceStatusRate);
 
-            // Initialize the wait object
             WaitUIUpdate ??= new WaitForSeconds(1.0f / uiUpdateRate);
         }
 
         private void InitializeUIComponents()
         {
-            Transform _uiCanvas = transform.Find("UI");
-            if (_uiCanvas == null) return;
+            Transform _ui = transform.Find("Canvas")?.Find("UI");
+            if (_ui == null) return;
 
-            _info = _uiCanvas.Find("Info");
-            if (_info != null)
+            _config = _ui.Find("Config");
+            _status = _ui.Find("Status");
+
+            // foreach (Transform child in _config)
+            // {
+            //     DestroyImmediate(child.gameObject);
+            // }
+            // foreach (Transform child in _status)
+            // {
+            //     DestroyImmediate(child.gameObject);
+            // }
+
+            // Create Config Text UI Components based on the elements in UMH_Device_Config
+            foreach (var prop in typeof(UMH_Device_Config).GetProperties())
             {
-                _voltageText = _info.Find("Voltage")?.GetComponent<TextMeshProUGUI>();
-                _temperatureText = _info.Find("Temperature")?.GetComponent<TextMeshProUGUI>();
-                _stimulationTypeText = _info.Find("StimulationType")?.GetComponent<TextMeshProUGUI>();
-                _deltaTimeText = _info.Find("DeltaTime")?.GetComponent<TextMeshProUGUI>();
-                _loopFreqText = _info.Find("LoopFreq")?.GetComponent<TextMeshProUGUI>();
-                _calibrationModeText = _info.Find("Calibration")?.GetComponent<TextMeshProUGUI>();
-                _planeModeText = _info.Find("Plane")?.GetComponent<TextMeshProUGUI>();
+                GameObject textObject = Instantiate(TextPrefab, _config);
+                TextMeshProUGUI text = textObject.GetComponent<TextMeshProUGUI>();
+                text.text = $"{prop.Name}: \t\t ...";
+                _configTexts[prop.Name] = text;
             }
+
+            // Create Status Text UI Components based on the elements in UMH_Device_Status
+            foreach (var prop in typeof(UMH_Device_Status).GetProperties())
+            {
+                GameObject textObject = Instantiate(TextPrefab, _status);
+                TextMeshProUGUI text = textObject.GetComponent<TextMeshProUGUI>();
+                text.text = $"{prop.Name}: \t\t ...";
+                _statusTexts[prop.Name] = text;
+            }
+
         }
 
-        // Update is called once per frame
         void Update()
         {
             if (_needsUpdate)
@@ -193,57 +211,101 @@ namespace UMH
             }
         }
 
-        void FixedUpdate()
-        {
-
-        }
-
-        
-
         private IEnumerator UpdateUI()
         {
             while (true)
             {
                 if (UMH_API.IsConnected)
                 {
+                    UpdateDeviceConfigUI();
                     UpdateDeviceStatusUI();
                 }
                 yield return WaitUIUpdate;
             }
         }
 
+        private void UpdateDeviceConfigUI()
+        {
+            UMH_Device_Config config = UMH_API.GetDeviceConfig();
+            if (config == null) return;
+
+            foreach (var prop in typeof(UMH_Device_Config).GetProperties())
+            {
+                if (_configTexts.TryGetValue(prop.Name, out var textComp))
+                {
+                    var value = prop.GetValue(config);
+                    string displayValue;
+                    string color = _info_num_color;
+
+                    switch (prop.Name)
+                    {
+                        case nameof(UMH_Device_Config.TransducerSize):
+                        case nameof(UMH_Device_Config.TransducerSpacing):
+                            float meters = (float)value;
+                            if (meters < 0.1f)
+                                displayValue = $"{meters * 1000:F2}mm";
+                            else
+                                displayValue = $"{meters:F3}m";
+                            break;
+                        default:
+                            displayValue = value.ToString();
+                            break;
+                    }
+
+                    textComp.text = $"{prop.Name}: \t\t <color={color}>{displayValue}</color>";
+                }
+            }
+        }
+
         private void UpdateDeviceStatusUI()
         {
             UMH_Device_Status status = UMH_API.GetDeviceStatus();
+            if (status == null) return;
 
-            if (_voltageText != null)
-                _voltageText.text = $"Voltage: \t <color={_info_num_color}>{status.Voltage:F2}V</color>";
-
-            if (_temperatureText != null)
-                _temperatureText.text = $"Temperature: \t <color={_info_num_color}>{status.Temperature:F2}°C</color>";
-
-            if(_stimulationTypeText != null)
-                _stimulationTypeText.text = $"StimulationType: \t <color={_info_num_color}>{status.StimulationType}</color>";
-
-            if (_deltaTimeText != null)
+            foreach (var prop in typeof(UMH_Device_Status).GetProperties())
             {
-                double dt = status.StimulationRefreshDeltaTime;
-                (double dtVal, string dtUnit) = GetTimeWithUnit(dt);
-                _deltaTimeText.text = $"DeltaTime: \t <color={_info_num_color}>{dtVal:F3}{dtUnit}</color>";
+                if (_statusTexts.TryGetValue(prop.Name, out var textComp))
+                {
+                    var value = prop.GetValue(status);
+                    string displayValue;
+                    string color = _info_num_color;
+
+                    switch (prop.Name)
+                    {
+                        case nameof(UMH_Device_Status.Voltage_VDDA):
+                        case nameof(UMH_Device_Status.Voltage_3V3):
+                        case nameof(UMH_Device_Status.Voltage_5V0):
+                            displayValue = $"{value:F2}V";
+                            break;
+                        case nameof(UMH_Device_Status.Temperature):
+                            displayValue = $"{value:F2}°C";
+                            break;
+                        case nameof(UMH_Device_Status.DeltaTime):
+                            (double dtVal, string dtUnit) = GetTimeWithUnit((double)value);
+                            displayValue = $"{dtVal:F3}{dtUnit}";
+                            break;
+                        case nameof(UMH_Device_Status.LoopFreq):
+                            (double freqVal, string freqUnit) = GetFrequencyWithUnit((float)value);
+                            displayValue = $"{freqVal:F2}{freqUnit}";
+                            break;
+                        case nameof(UMH_Device_Status.CalibrationMode):
+                            int calMode = (int)value;
+                            color = calMode == 1 ? "#ff0000ff" : "#3a8b3aff";
+                            displayValue = calMode == 1 ? "Cleaned" : "Calibrated";
+                            break;
+                        case nameof(UMH_Device_Status.PhaseSetMode):
+                            int phaseMode = (int)value;
+                            color = phaseMode == 1 ? "#ff0000ff" : "#3a8b3aff";
+                            displayValue = phaseMode == 1 ? "True" : "False";
+                            break;
+                        default:
+                            displayValue = value.ToString();
+                            break;
+                    }
+
+                    textComp.text = $"{prop.Name}: \t\t <color={color}>{displayValue}</color>";
+                }
             }
-
-            if (_loopFreqText != null)
-            {
-                double freq = status.LoopFreq;
-                (double freqVal, string freqUnit) = GetFrequencyWithUnit(freq);
-                _loopFreqText.text = $"LoopFreq: \t <color={_info_num_color}>{freqVal:F2}{freqUnit}</color>";
-            }
-
-            if (_calibrationModeText != null)
-                _calibrationModeText.text = $"Calibration: \t <color={(status.CalibrationMode == 1 ? "#ff0000ff" : "#3a8b3aff")}>{(status.CalibrationMode == 1 ? "Cleaned" : "Calibrated")}</color>";
-
-            if (_planeModeText != null)
-                _planeModeText.text = $"Plane Mode: \t <color={(status.PlaneMode == 1 ? "#ff0000ff" : "#3a8b3aff")}>{(status.PlaneMode == 1 ? "True" : "False")}</color>";
         }
 
         private (double, string) GetTimeWithUnit(double dt)

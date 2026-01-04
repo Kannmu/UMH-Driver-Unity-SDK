@@ -4,71 +4,59 @@ using UnityEngine;
 
 namespace UMH
 {
-    public enum ArrayType
+    public enum UMH_ArrayType
     {
         Rect,
         Hex
     }
-
+    
     public class UMH_Array
     {
-        public ArrayType ArrayType;
-        public Vector2 ArraySize;
-        public Vector3[] ArrayConnerPoints;
-        public float TransducerSpace;
-        public Transducer[] Transducers;
-        public int NumTransducers => Transducers.Length;
+        private static UMH_Array _instance;
+        public static UMH_Array Instance => _instance ??= new UMH_Array();
+        public static Transducer[] Transducers { get; private set; }
+        private static Vector2[] ArrayConnerPoints { get; set; }
+        private UMH_Array() { }
 
-
-        public UMH_Device_Version Version
+        /// <summary>
+        /// 根据当前设备配置初始化阵列
+        /// </summary>
+        public void Init()
         {
-            get => Version;
-            set
+            GenerateTransducers();
+            CalculateArrayConnerPoints();
+        }
+
+        private static void GenerateTransducers()
+        {
+            switch (UMH_Device.DeviceConfig.ArrayType)
             {
-                switch (value)
-                {
-                    case UMH_Device_Version.V4:
-                        ArrayType = ArrayType.Rect;
-                        ArraySize = new Vector2(0.13f, 0.13f);
-                        TransducerSpace = 16.602f * 1e-3f;
-                        Transducers = new Transducer[64];
-                        ArrayConnerPoints = new Vector3[]
+                case UMH_ArrayType.Rect:
+                    {
+                        Transducers = new Transducer[UMH_Device.DeviceConfig.NumTransducers];
+                        for (int i = 0; i < Transducers.Length; i++)
                         {
-                            new(-ArraySize.x / 2, 0, -ArraySize.y / 2),
-                            new(ArraySize.x / 2, 0, -ArraySize.y / 2),
-                            new(ArraySize.x / 2, 0, ArraySize.y / 2),
-                            new(-ArraySize.x / 2, 0, ArraySize.y / 2),
-                        };
-                        break;
-                    case UMH_Device_Version.V5:
-                        ArrayType = ArrayType.Hex;
-                        ArraySize = new Vector2(0.1023f, 0.09f);
-                        TransducerSpace = 10.0f * 1e-3f;
-                        Transducers = new Transducer[60];
-                        ArrayConnerPoints = new Vector3[]
-                        {
-                            new(-ArraySize.x / 2, 0, 0.0f),
-                            new(ArraySize.x / 2, 0, 0.0f),
-                            new(-(ArraySize.x / 2)*Mathf.Cos(60*Mathf.Deg2Rad), 0, ArraySize.y / 2),
-                            new((ArraySize.x / 2)*Mathf.Cos(60*Mathf.Deg2Rad), 0, ArraySize.y / 2),
-                            new(-(ArraySize.x / 2)*Mathf.Cos(60*Mathf.Deg2Rad), 0, -ArraySize.y / 2),
-                            new((ArraySize.x / 2)*Mathf.Cos(60*Mathf.Deg2Rad), 0, -ArraySize.y / 2),
-                        };
-                        break;
-                }
+                            int row = i / UMH_Device.DeviceConfig.ArraySize;
+                            int col = i % UMH_Device.DeviceConfig.ArraySize;
+                            Transducers[i] = new Transducer();
+                            Transducers[i].Position = new Vector2(col * UMH_Device.DeviceConfig.TransducerSpacing, -row * UMH_Device.DeviceConfig.TransducerSpacing);
+                        }
+                    }
+                    break;
+                case UMH_ArrayType.Hex:
+                    break;
+                default:
+                    break;
             }
-        }
 
-        public UMH_Array(UMH_Device_Version version)
+        }
+        public static Vector2[] GetArrayConnerPoints()
         {
-            Version = version;
+            return ArrayConnerPoints;
         }
-
-        public void GenerateTransducers(Transducer[] transducers)
+        private static void CalculateArrayConnerPoints()
         {
-            
-        }
 
+        }
     }
 }
-
